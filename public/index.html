@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Linear → Notion Sync</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f5f5f4;
+      --surface: #ffffff;
+      --border: #e7e5e4;
+      --text: #1c1917;
+      --muted: #78716c;
+      --accent: #6366f1;
+      --accent-light: #eef2ff;
+      --green: #16a34a;
+      --green-light: #dcfce7;
+      --yellow: #ca8a04;
+      --yellow-light: #fef9c3;
+      --red: #dc2626;
+      --red-light: #fee2e2;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-logo {
+      font-size: 18px;
+    }
+
+    .header-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .header-sub {
+      font-size: 13px;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) { background: #4f46e5; }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border-color: var(--border);
+    }
+
+    .btn-secondary:hover:not(:disabled) { background: var(--bg); }
+
+    .auto-sync-status {
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sync-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+    }
+
+    .sync-dot.syncing {
+      background: var(--accent);
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ── Main layout ─────────────────────────────── */
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 32px 24px;
+    }
+
+    /* ── States ──────────────────────────────────── */
+    #loading, #error {
+      text-align: center;
+      padding: 80px 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    #error { color: var(--red); }
+
+    .spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Grid ────────────────────────────────────── */
+    .prd-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    /* ── PRD Card ─────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      transition: box-shadow 0.15s;
+    }
+
+    .card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+
+    .card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .card-title {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.4;
+      flex: 1;
+    }
+
+    .card-title a {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .card-title a:hover { text-decoration: underline; }
+
+    /* ── Status badge ─────────────────────────────── */
+    .badge {
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .badge-in-progress { background: var(--yellow-light); color: var(--yellow); }
+    .badge-complete    { background: var(--green-light);  color: var(--green); }
+    .badge-not-started { background: var(--bg);           color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── Overall progress bar ─────────────────────── */
+    .overall-progress {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .progress-track {
+      flex: 1;
+      height: 6px;
+      background: var(--bg);
+      border-radius: 100px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 100px;
+      transition: width 0.4s ease;
+    }
+
+    .fill-complete    { background: var(--green); }
+    .fill-in-progress { background: var(--accent); }
+    .fill-not-started { background: var(--border); }
+
+    .progress-pct {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      width: 30px;
+      text-align: right;
+    }
+
+    /* ── Milestone list ───────────────────────────── */
+    .milestones {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .milestone {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .milestone-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .milestone-name {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+
+    .milestone-pct {
+      font-size: 11px;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .milestone-bar {
+      height: 3px;
+      background: var(--bg);
+      border-radius: 100px;
+      overflow: hidden;
+    }
+
+    .milestone-fill {
+      height: 100%;
+      border-radius: 100px;
+      background: var(--accent);
+      transition: width 0.4s ease;
+    }
+
+    /* ── Card footer ──────────────────────────────── */
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+      margin-top: auto;
+    }
+
+    .last-synced {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .sync-success {
+      font-size: 11px;
+      color: var(--green);
+      font-weight: 500;
+    }
+
+    .btn-ghost {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .btn-ghost:hover:not(:disabled) {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* ── Password gate ───────────────────────────────── */
+    #gate {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .gate-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 36px;
+      width: 100%;
+      max-width: 360px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .gate-header { display: flex; flex-direction: column; gap: 4px; }
+    .gate-title  { font-size: 16px; font-weight: 700; }
+    .gate-sub    { font-size: 13px; color: var(--muted); }
+
+    .gate-field { display: flex; flex-direction: column; gap: 6px; }
+
+    .gate-field label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .gate-field input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--surface);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .gate-field input:focus { border-color: var(--accent); }
+    .gate-field input.error { border-color: var(--red); }
+    .gate-error { font-size: 12px; color: var(--red); min-height: 16px; }
+    .btn-full   { width: 100%; justify-content: center; padding: 10px; font-size: 14px; }
+
+    /* ── Toast ────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--text);
+      color: #fff;
+      font-size: 13px;
+      padding: 10px 18px;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+      transition: transform 0.25s ease;
+      pointer-events: none;
+      white-space: nowrap;
+    }
+
+    #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.error { background: var(--red); }
+  </style>
+</head>
+<body>
+
+<!-- Password gate — hidden once authenticated -->
+<div id="gate">
+  <div class="gate-card">
+    <div class="gate-header">
+      <div style="font-size:24px; margin-bottom:4px">🔄</div>
+      <div class="gate-title">Linear → Notion Sync</div>
+      <div class="gate-sub">AbodeMine Platform · Internal dashboard</div>
+    </div>
+    <div class="gate-field">
+      <label for="pw-input">Password</label>
+      <input
+        type="password"
+        id="pw-input"
+        placeholder="Enter password"
+        autocomplete="current-password"
+        onkeydown="if(event.key==='Enter') submitPassword()"
+      />
+      <div class="gate-error" id="gate-error"></div>
+    </div>
+    <button class="btn btn-primary btn-full" id="gate-btn" onclick="submitPassword()">
+      Sign in
+    </button>
+  </div>
+</div>
+
+<header>
+  <div class="header-left">
+    <span class="header-logo">🔄</span>
+    <div>
+      <div class="header-title" id="project-name">Loading…</div>
+      <div class="header-sub">Linear → Notion progress sync</div>
+    </div>
+  </div>
+  <div class="auto-sync-status" id="auto-sync-status">Loading…</div>
+</header>
+
+<main>
+  <div id="loading"><span class="spinner"></span> Loading…</div>
+  <div id="error" style="display:none"></div>
+  <div class="prd-grid" id="prd-grid" style="display:none"></div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+  let prdData = [];
+
+  // ── Badge helpers ────────────────────────────────
+  function badgeClass(status) {
+    if (status === 'Complete') return 'badge-complete';
+    if (status === 'In Progress') return 'badge-in-progress';
+    return 'badge-not-started';
+  }
+
+  function fillClass(status) {
+    if (status === 'Complete') return 'fill-complete';
+    if (status === 'In Progress') return 'fill-in-progress';
+    return 'fill-not-started';
+  }
+
+  // ── Render ───────────────────────────────────────
+  function renderCard(prd) {
+    const milestonesHtml = prd.milestones.map(m => `
+      <div class="milestone">
+        <div class="milestone-header">
+          <span class="milestone-name" title="${m.name}">${m.name}</span>
+          <span class="milestone-pct">${m.progress}%</span>
+        </div>
+        <div class="milestone-bar">
+          <div class="milestone-fill" style="width:${m.progress}%"></div>
+        </div>
+      </div>
+    `).join('');
+
+    const synced = prd.lastSynced
+      ? `Last synced: ${prd.lastSynced}`
+      : 'Never synced';
+
+    return `
+      <div class="card" id="card-${prd.notionPageId}">
+        <div class="card-header">
+          <div class="card-title">
+            <a href="${prd.notionUrl}" target="_blank" rel="noopener">${prd.title}</a>
+          </div>
+          <span class="badge ${badgeClass(prd.status)}">${prd.status}</span>
+        </div>
+
+        <div class="overall-progress">
+          <div class="progress-track">
+            <div class="progress-fill ${fillClass(prd.status)}" style="width:${prd.avgProgress}%"></div>
+          </div>
+          <span class="progress-pct">${prd.avgProgress}%</span>
+        </div>
+
+        <div class="milestones">${milestonesHtml}</div>
+
+        <div class="card-footer">
+          <span class="last-synced" id="synced-${prd.notionPageId}">${synced}</span>
+          <button
+            class="btn btn-ghost"
+            id="btn-${prd.notionPageId}"
+            onclick="syncOne('${prd.notionPageId}', '${prd.title}')"
+          >Sync now</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function render(data) {
+    prdData = data.prds;
+    document.getElementById('project-name').textContent = data.projectName;
+
+    const grid = document.getElementById('prd-grid');
+    grid.innerHTML = data.prds.map(renderCard).join('');
+
+    document.getElementById('loading').style.display = 'none';
+    grid.style.display = 'grid';
+  }
+
+  // ── Load data ────────────────────────────────────
+  async function loadData() {
+    try {
+      const res = await fetch('/api/data');
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      render(data);
+    } catch (err) {
+      document.getElementById('loading').style.display = 'none';
+      const errEl = document.getElementById('error');
+      errEl.textContent = `Failed to load: ${err.message}`;
+      errEl.style.display = 'block';
+      throw err;
+    }
+  }
+
+  // ── Sync one PRD ─────────────────────────────────
+  async function syncOne(notionPageId, title) {
+    const btn = document.getElementById(`btn-${notionPageId}`);
+    const syncedEl = document.getElementById(`synced-${notionPageId}`);
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Syncing…';
+
+    try {
+      const res = await fetch('/api/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notionPageId }),
+      });
+
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error);
+
+      syncedEl.innerHTML = `<span class="sync-success">✓ Synced ${json.lastSynced}</span>`;
+      showToast(`"${title}" updated in Notion`);
+
+      // Refresh card data after a beat
+      setTimeout(loadData, 1500);
+    } catch (err) {
+      showToast(`Sync failed: ${err.message}`, true);
+      btn.disabled = false;
+      btn.textContent = 'Sync now';
+    }
+  }
+
+  // ── Auto-sync all PRDs ────────────────────────────
+  const AUTO_SYNC_INTERVAL = 30 * 60 * 1000; // 30 minutes
+
+  function setAutoSyncStatus(state, lastTime) {
+    const el = document.getElementById('auto-sync-status');
+    if (state === 'syncing') {
+      el.innerHTML = `<span class="sync-dot syncing"></span> Syncing Notion…`;
+    } else if (state === 'synced') {
+      const t = lastTime ? `Last synced ${lastTime}` : 'Up to date';
+      el.innerHTML = `<span class="sync-dot"></span> Auto-sync on · ${t}`;
+    } else {
+      el.innerHTML = `<span class="sync-dot" style="background:var(--red)"></span> Sync error`;
+    }
+  }
+
+  async function syncAll(silent = false) {
+    setAutoSyncStatus('syncing');
+    const ids = prdData.map(p => p.notionPageId);
+    let succeeded = 0;
+
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const res = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ notionPageId: id }),
+          });
+          if (res.ok) succeeded++;
+        } catch (_) {}
+      })
+    );
+
+    const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setAutoSyncStatus('synced', now);
+    if (!silent) showToast(`All PRDs synced to Notion`);
+    setTimeout(loadData, 800);
+  }
+
+  // ── Toast ─────────────────────────────────────────
+  function showToast(msg, isError = false) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className = isError ? 'error show' : 'show';
+    setTimeout(() => { t.className = isError ? 'error' : ''; }, 3000);
+  }
+
+  // ── Auth gate ─────────────────────────────────────
+  const TOKEN_KEY = 'am_sync_token';
+
+  function isAuthenticated() {
+    return !!sessionStorage.getItem(TOKEN_KEY);
+  }
+
+  async function submitPassword() {
+    const input  = document.getElementById('pw-input');
+    const errEl  = document.getElementById('gate-error');
+    const btn    = document.getElementById('gate-btn');
+    const pw     = input.value.trim();
+
+    if (!pw) { errEl.textContent = 'Please enter a password.'; return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Checking…';
+    errEl.textContent = '';
+    input.classList.remove('error');
+
+    try {
+      const res  = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        input.classList.add('error');
+        errEl.textContent = 'Incorrect password. Try again.';
+        input.value = '';
+        input.focus();
+      } else {
+        sessionStorage.setItem(TOKEN_KEY, json.token);
+        document.getElementById('gate').style.display = 'none';
+        startApp();
+      }
+    } catch {
+      errEl.textContent = 'Something went wrong. Please try again.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Sign in';
+    }
+  }
+
+  function startApp() {
+    loadData().then(() => syncAll(true));
+    setInterval(() => syncAll(true), AUTO_SYNC_INTERVAL);
+    setInterval(loadData, 5 * 60 * 1000);
+  }
+
+  // ── Init ──────────────────────────────────────────
+  if (isAuthenticated()) {
+    document.getElementById('gate').style.display = 'none';
+    startApp();
+  } else {
+    // Focus password field
+    document.getElementById('pw-input').focus();
+  }
+</script>
+</body>
+</html>

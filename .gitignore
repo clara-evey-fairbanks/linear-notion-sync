@@ -1,0 +1,12 @@
+# Local credentials — never commit these
+.env.local
+.env
+
+# Dependencies
+node_modules/
+
+# Vercel
+.vercel/
+
+# OS
+.DS_Store
