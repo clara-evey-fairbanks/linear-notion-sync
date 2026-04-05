@@ -4,8 +4,5 @@
   "type": "module",
   "scripts": {
     "dev": "node dev.js"
-  },
-  "devDependencies": {
-    "vercel": "^37.0.0"
   }
 }
