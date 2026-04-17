@@ -386,6 +386,101 @@
     .gate-error { font-size: 12px; color: var(--red); min-height: 16px; }
     .btn-full   { width: 100%; justify-content: center; padding: 10px; font-size: 14px; }
 
+    /* ── Sprint Reviews ──────────────────────────── */
+    .section-header {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin: 40px 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sprint-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+
+    .sprint-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .sprint-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .sprint-title {
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    .sprint-dates {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .sprint-stats {
+      display: flex;
+      gap: 20px;
+    }
+
+    .sprint-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .sprint-stat-value {
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .sprint-stat-label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .sprint-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+      margin-top: auto;
+    }
+
+    .sprint-link {
+      font-size: 12px;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+    }
+
+    .sprint-link:hover { text-decoration: underline; }
+
+    .sprint-placeholder {
+      font-size: 13px;
+      color: var(--muted);
+      font-style: italic;
+    }
+
     /* ── Toast ────────────────────────────────────── */
     #toast {
       position: fixed;
@@ -449,6 +544,12 @@
   <div id="loading"><span class="spinner"></span> Loading…</div>
   <div id="error" style="display:none"></div>
   <div class="prd-grid" id="prd-grid" style="display:none"></div>
+
+  <!-- Sprint Reviews section -->
+  <div id="sprint-section" style="display:none">
+    <div class="section-header">🏃 Sprint Reviews</div>
+    <div class="sprint-grid" id="sprint-grid"></div>
+  </div>
 </main>
 
 <div id="toast"></div>
@@ -669,8 +770,103 @@
 
   function startApp() {
     loadData().then(() => syncAll(true));
+    loadCycles();
     setInterval(() => syncAll(true), AUTO_SYNC_INTERVAL);
     setInterval(loadData, 5 * 60 * 1000);
+    setInterval(loadCycles, 10 * 60 * 1000); // refresh cycles every 10 min
+  }
+
+  // ── Sprint Reviews ────────────────────────────────
+  function fillClass2(progress) {
+    if (progress >= 100) return 'fill-complete';
+    if (progress > 0) return 'fill-in-progress';
+    return 'fill-not-started';
+  }
+
+  function renderSprintCard(cycle, label) {
+    if (!cycle) {
+      return `
+        <div class="sprint-card">
+          <div class="sprint-card-header">
+            <div>
+              <div class="sprint-title">${label}</div>
+            </div>
+          </div>
+          <div class="sprint-placeholder">No cycle data available from Linear.</div>
+        </div>
+      `;
+    }
+
+    const notionBtn = cycle.notionUrl
+      ? `<a class="sprint-link" href="${cycle.notionUrl}" target="_blank" rel="noopener">Open in Notion →</a>`
+      : `<span class="sprint-placeholder">No Notion page linked yet</span>`;
+
+    const isPlanning = cycle.progress === 0 && cycle.done === 0;
+
+    const progressSection = isPlanning
+      ? `<div style="font-size:13px; color:var(--muted); font-style:italic">Planning — no progress yet</div>`
+      : `
+        <div class="sprint-stats">
+          <div class="sprint-stat">
+            <span class="sprint-stat-value">${cycle.done}</span>
+            <span class="sprint-stat-label">Issues done</span>
+          </div>
+          <div class="sprint-stat">
+            <span class="sprint-stat-value">${cycle.total}</span>
+            <span class="sprint-stat-label">Total in sprint</span>
+          </div>
+          <div class="sprint-stat">
+            <span class="sprint-stat-value">${cycle.progress}%</span>
+            <span class="sprint-stat-label">Progress</span>
+          </div>
+        </div>
+        <div class="overall-progress">
+          <div class="progress-track">
+            <div class="progress-fill ${fillClass2(cycle.progress)}" style="width:${cycle.progress}%"></div>
+          </div>
+          <span class="progress-pct">${cycle.progress}%</span>
+        </div>
+      `;
+
+    const statusBadge = isPlanning
+      ? `<span class="badge badge-not-started">Planning</span>`
+      : cycle.progress >= 100
+        ? `<span class="badge badge-complete">Complete</span>`
+        : `<span class="badge badge-in-progress">In Progress</span>`;
+
+    return `
+      <div class="sprint-card">
+        <div class="sprint-card-header">
+          <div>
+            <div class="sprint-title">${cycle.name}</div>
+            <div class="sprint-dates">${cycle.startDate} – ${cycle.endDate}</div>
+          </div>
+          ${statusBadge}
+        </div>
+        ${progressSection}
+        <div class="sprint-footer">
+          ${notionBtn}
+        </div>
+      </div>
+    `;
+  }
+
+  async function loadCycles() {
+    try {
+      const res = await fetch('/api/cycles');
+      if (!res.ok) return; // fail silently — sprint section is non-critical
+      const data = await res.json();
+      if (!data.current && !data.upcoming) return;
+
+      const grid = document.getElementById('sprint-grid');
+      grid.innerHTML =
+        renderSprintCard(data.current, 'Current Sprint') +
+        renderSprintCard(data.upcoming, 'Next Sprint');
+
+      document.getElementById('sprint-section').style.display = 'block';
+    } catch (_) {
+      // Sprint section is non-critical; hide it if there's an error
+    }
   }
 
   // ── Init ──────────────────────────────────────────
